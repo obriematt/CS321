@@ -1,0 +1,157 @@
+//PART 2
+//Matthew O'Brien
+
+
+
+
+
+
+PARSER_BEGIN(Lexer2)
+public class Lexer2 {}
+class LexicalError extends TokenMgrError{
+	public LexicalError(String message, int n){
+		super(message, n);
+	}
+}
+PARSER_END(Lexer2)
+
+
+
+//WHITE SPACE
+SKIP:	{ " " | "\t" | "\r"  | "\n" }
+
+
+//Valid block comments
+SPECIAL_TOKEN: { <"/*" (~["*"])* "*" ("*" | (~["*","/"] (~["*"])* "*"))* "*/">}
+
+//Invalid block comments
+SPECIAL_TOKEN: { <"/*" (~["*"])* "*" ("*" | (~["*", "/"] (~["*"])*))*>{
+	if(!matchedToken.image.endsWith("*/"))
+		throw new LexicalError(" at ("+matchedToken.beginLine+","+matchedToken.beginColumn+"). Unclosed comments: "+matchedToken.image, 0);
+	}
+}
+
+//Valid single line comments
+SPECIAL_TOKEN: { <"//" (~["\r", "\n"])* ("\n" | "\r" |"\r\n")> }
+
+
+
+//Invalid String check
+SPECIAL_TOKEN:	{<INVALID_STR:"\"" (~[])* "\r"> {
+		if(matchedToken.image.contains("\r")){
+			throw new LexicalError("at  ("+matchedToken.beginLine+","+matchedToken.beginColumn+"). Ill-formed or unclosed string: "+matchedToken.image, 0);
+		}	
+
+	}
+}
+
+
+//STRING LITERALS
+TOKEN:  { <STRLIT:"\"" (~["\"","\r"])* (["\""])?> {
+	if(!matchedToken.image.endsWith("\"")){
+		throw new LexicalError("at  ("+matchedToken.beginLine+","+matchedToken.beginColumn+"). Ill-formed or unclosed string: "+matchedToken.image, 0);
+	}
+}
+}
+
+
+
+//KEYWORDS
+TOKEN:	{ <CLASS: "class"> }
+TOKEN:	{ <EXTENDS: "extends"> }
+TOKEN:  { <STATIC: "static"> }
+TOKEN:  { <PUBLIC: "public"> }
+TOKEN:  { <MAIN: "main"> }
+TOKEN:  { <VOID: "void"> }
+TOKEN:  { <BOOLEAN: "boolean"> }
+TOKEN:  { <INT: "int"> }
+TOKEN:  { <DOUBLE: "double"> }
+TOKEN:  { <STRING: "String"> }
+TOKEN:  { <TRUE: "true"> }
+TOKEN:  { <FALSE: "false"> }
+TOKEN:  { <NEW: "new"> }
+TOKEN:  { <THIS: "this"> }
+TOKEN:  { <IF: "if"> }
+TOKEN:  { <ELSE: "else"> }
+TOKEN:  { <WHILE: "while"> }
+TOKEN:  { <RETURN: "return"> }
+TOKEN:  { <SYSTEM: "System"> }
+TOKEN:  { <OUT: "out"> }
+TOKEN:  { <PRINTLN: "println"> }
+
+
+//TOKENS WITH MULTIPLE LEXEMES
+TOKEN:  { <ID: <LETTER> ( <LETTER>|<DIGIT>|"_")* >
+| <#LETTER: (["A"-"Z","a"-"z"])>
+| <#DIGIT: (["0"-"9"])>
+}
+
+
+
+//OPERATORS AND DELIMITERS
+TOKEN:	{ <ADD: "+"> }
+TOKEN:  { <SUB: "-"> }
+TOKEN:  { <MUL: "*"> }
+TOKEN:  { <DIV: "/"> }
+TOKEN:  { <AND: "&&"> }
+TOKEN:  { <OR: "||"> }
+TOKEN:  { <NOT: "!"> }
+TOKEN:  { <EQ: "=="> }
+TOKEN:  { <NE: "!="> }
+TOKEN:	{ <LT: "<"> }
+TOKEN:  { <LE: "<="> }
+TOKEN:	{ <GT: ">"> }
+TOKEN:  { <GE: ">="> }
+TOKEN:  { <ASSGN: "="> }
+TOKEN:  { <SEMI: ";"> }
+TOKEN:  { <COMMA: ","> }
+TOKEN:  { <DOT: "."> }
+TOKEN:  { <LPAREN: "("> }
+TOKEN:  { <RPAREN: ")"> }
+TOKEN:  { <LBRAC: "["> }
+TOKEN:  { <RBRAC: "]"> }
+TOKEN:  { <LCURLY: "{"> }
+TOKEN:  { <RCURLY: "}"> }
+
+
+
+
+
+//Checking for int literals
+TOKEN : {
+<INTLIT: ["1"-"9"] (["0"-"9"])* | "0" ["x","X"] (["0"-"9","a"-"f","A"-"F"])* | "0" (["0"-"7"])*>{
+	String first = matchedToken.image.substring(0,1);
+	long toCheck = Long.decode(matchedToken.image);
+	if(matchedToken.image.length() > 1){
+		String second = matchedToken.image.substring(1,2);
+		if(first.equals("0") && second.equals("x") || second.equals("X")){
+			if(toCheck > 2147483647){
+				throw new LexicalError("at ("+matchedToken.beginLine+","+matchedToken.beginColumn+"). Invalid hexadecimal literal: "+matchedToken.image, 0);
+			}
+ 		}
+	}
+	if(first.equals("0")){
+		if(toCheck > 2147483647){
+			throw new LexicalError("at ("+matchedToken.beginLine+","+matchedToken.beginColumn+"). Invalid octal literal: "+matchedToken.image, 0);
+		}
+	}
+	else
+		if(toCheck > 2147483647){
+			throw new LexicalError("at ("+matchedToken.beginLine+","+matchedToken.beginColumn+"). Invalid decimal literal: "+matchedToken.image, 0);
+		}
+	
+	}	
+}
+
+
+
+//Checking for double literals
+TOKEN: { <DBLLIT:(["0"-"9"])* "." (["0"-"9"])*>}
+
+
+
+//Checking for illegal characters
+SPECIAL_TOKEN:	{
+	<~[]> {if(true) throw new LexicalError("at ("+matchedToken.beginLine+","+matchedToken.beginColumn+"). Illegal character: "+matchedToken.image, 0);}
+}
+

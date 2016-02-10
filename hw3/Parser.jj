@@ -1,0 +1,524 @@
+// This is supporting software for CS321/CS322 Compilers and Language Design.
+// Copyright (c) Portland State University.
+//---------------------------------------------------------------------------
+// For CS321 F'15 (J. Li).
+//
+
+// A starter version of parsar for the miniJava language.
+//
+
+// options { DEBUG_PARSER=true; }  /* Show debugging info */
+
+
+// Matthew O'Brien CS321 Fall '15
+
+PARSER_BEGIN(Parser)
+import java.util.*;
+import java.io.*;
+import ast.*;
+
+public class Parser {
+  public static void main(String [] args) {
+    if (args.length < 1) {
+      System.out.println("Need a file name as command-line argument.");
+      return;
+    } 
+    try{
+      FileReader input = new FileReader(args[0]);
+      Ast.Program p = new Parser(input).Program();
+      input.close();
+      System.out.print(p);
+    } catch (TokenMgrError e) {
+      System.err.println(e);
+    } catch (Exception e) {
+      System.err.println(e);
+    }
+  }
+}
+PARSER_END(Parser)
+
+//
+// LEXER SECTION ---------------------------------------------------------------
+//
+// A simplified version. Error detections are not included.
+// 
+SKIP:  /* Whitespace */
+{ 
+  " " | "\t" | "\r" | "\n" 
+}
+
+SKIP:  /* Comments -- single-line form only */
+{
+  <"//" (~["\n","\r"])* ("\n"|"\r"|"\r\n")> 
+}
+
+TOKEN:  /* Keywords */
+{
+  "class" | "extends" | "static" | "public" | "main" | "void" | "boolean"
+| "int" | "double" | "String" | "true" | "false" | "new" | "this" | "if"
+| "else" | "while" | "return" | "System" | "out" | "println"
+}
+
+TOKEN:  /* Literals and IDs */
+{
+  <#DIGIT:  ["0"-"9"]>
+| <#LETTER: ["A"-"Z"]|["a"-"z"]>
+| <INTLIT:  "0"|["1"-"9"](<DIGIT>)*> 	// decimal form only
+| <DBLLIT:  (<DIGIT>)+"."(<DIGIT>)*|(<DIGIT>)*"."(<DIGIT>)+> 
+| <STRLIT:  ("\"" (~["\"","\r","\n"])* "\"")>
+| <ID:      <LETTER> (<LETTER>|<DIGIT>)*>
+}
+
+TOKEN:  /* Operators and delimiters */
+{
+  "+" | "-" | "*" | "/" | "&&" | "||" | "!" | "==" | "!=" | "<" | "<=" 
+| ">" | ">=" |  "=" | ";" | "," | "." | "(" | ")" | "[" | "]" | "{" | "}"
+}
+
+//
+// PARSER SECTION ---------------------------------------------------------------
+//
+
+// Program -> {ClassDecl}
+//
+Ast.Program Program():
+{ List<Ast.ClassDecl> cl = new ArrayList<Ast.ClassDecl>();
+  Ast.ClassDecl c; }
+{
+  ( c=ClassDecl() {cl.add(c);} )* <EOF>
+  { return new Ast.Program(cl); }
+}
+
+// ClassDecl -> "class" <ID> ["extends" <ID>] "{" {VarDecl} {MethodDecl} "}"
+//
+Ast.ClassDecl ClassDecl():  
+{ List<Ast.VarDecl> vl = new ArrayList<Ast.VarDecl>();
+  List<Ast.MethodDecl> ml = new ArrayList<Ast.MethodDecl>();
+  Ast.VarDecl v;
+  Ast.MethodDecl m;
+  Ast.Id id, pid = null; }
+{ 
+  "class" id=Id() [ "extends" pid=Id() ] 
+    "{" ( v=VarDecl() {vl.add(v);} )* 
+        ( m=MethodDecl() {ml.add(m);} )* "}"
+  { return new Ast.ClassDecl(id.nm,pid==null?null:pid.nm,vl,ml); }
+}
+
+
+//MethodDecl -> "public" ( ExtType <ID> "(" [Param {"," Param}] ")"
+//		         | "static" "void" "main" "(" "String" "[" "]" <ID> ")" )
+//		   "{" {VarDecl} {Stmt} "}"
+//
+Ast.MethodDecl MethodDecl():
+{
+	Ast.Type ext = null;
+	Ast.Id id = null;
+	List<Ast.Param> param = new ArrayList<Ast.Param>();
+	List<Ast.VarDecl> var = new ArrayList<Ast.VarDecl>();
+	List<Ast.Stmt> stmt = new ArrayList<Ast.Stmt>();
+	Ast.Param param1;
+	Ast.VarDecl var1;
+	Ast.Stmt stmt1;
+
+}
+{
+	"public" (ext = ExtType() id = Id() "(" [param1 = Param() {param.add(param1);}("," param1 = Param() {param.add(param1);})*]")" | "static" "void" "main" "(" "String" "[" "]" Id() ")" )
+
+	"{"
+		(LOOKAHEAD(2) var1 = VarDecl() {var.add(var1);})*
+		(stmt1 = Stmt() {stmt.add(stmt1);})*
+	"}"
+	{return new Ast.MethodDecl(ext, id == null ? "main" : id.nm, param, var, stmt);}
+}
+
+//Param -> Type <ID>
+//
+Ast.Param Param():
+{
+	Ast.Type type;
+	Ast.Id id;
+}
+{
+	type = Type() id = Id()
+	{return new Ast.Param(type,id.nm);}
+}
+//VarDecl -> Type <ID> ["=" InitExpr] ";"
+//
+Ast.VarDecl VarDecl():
+{
+	Ast.Type type;
+	Ast.Id id;
+	Ast.Exp exp = null;
+}
+{
+	type = Type() id = Id() ["=" exp = InitExpr()] ";"
+	{return new Ast.VarDecl(type, id.nm, exp);}
+}
+
+
+
+//ExtType -> Type | "void"
+//
+Ast.Type ExtType():
+{
+	Ast.Type type;
+}
+{
+	("void" {type = null;}
+	|type=Type())
+	{return type;}
+}
+
+
+
+//Type -> BasicType ["[" "]"] | <ID>
+//
+Ast.Type Type():
+{
+	Ast.Type type;
+	Ast.Id id;
+}
+{
+	(type=BasicType() [ "[" "]" {type=new Ast.ArrayType(type);}]
+	| id=Id() {type=new Ast.ObjType(id.nm);})
+	{return type;}
+}
+
+
+//BasicType -> "int" | "double" | "bolean"
+//
+Ast.Type BasicType():
+{
+	Ast.Type type;
+}
+{
+	"int"{return new Ast.IntType();}
+	| "double" {return new Ast.DblType();}
+	| "boolean" {return new Ast.BoolType();}
+}
+
+
+//Stmt -> "{" {Stmt} "}"
+//	| ExtId ( ["[" Expr "]"] "=" InitExpr ";"
+//	| "(" [Args] ")" ";" )
+//	| "if" "(" Expr ")" Stmt ["else" Stmt]
+//	| "while" "(" Expr ")" Stmt
+//	| "System" "." "out" "." "println" "(" [PrArg] ")" ";"
+//	| "return" [Expr] ";"
+//
+
+Ast.Stmt Stmt():
+{
+	List<Ast.Stmt> stmt = new ArrayList<Ast.Stmt>();
+	List<Ast.Exp> arg = new ArrayList<Ast.Exp>();
+	Ast.Stmt stmt1;
+	Ast.Stmt stmt2 = null;
+	Ast.Block block;
+	Ast.Assign assign;
+	Ast.CallStmt call;
+	Ast.If ifs;
+	Ast.While whiles;
+	Ast.Print prints;
+	Ast.Return returns;
+	
+	Ast.Exp extid;
+	Ast.Id expid;
+	Ast.Field exp1;
+	Ast.Exp exp2;
+	Ast.Exp exp3;
+	Ast.Exp exp4 = null;
+
+}
+{
+	"{" (stmt1=Stmt() {stmt.add(stmt1);})* "}" {return new Ast.Block(stmt);} 
+	|
+	exp2=ExtId() ( ["[" exp4=Expr() "]"] "=" exp3=InitExpr() ";" {
+		if(exp4 == null){
+			return new Ast.Assign(exp2, exp3);
+		}else{
+			return new Ast.Assign(new Ast.ArrayElm(exp2, exp4), exp3);
+		}
+	}
+	|	
+		"(" [arg=Args()] ")" ";" {
+			if(exp2 instanceof Ast.Field){
+				exp1 = (Ast.Field)exp2;
+				return new Ast.CallStmt(exp1.obj, exp1.nm, arg);
+			}else{
+				expid = (Ast.Id)exp2;
+				return new Ast.CallStmt(new Ast.This(), expid.nm, arg);
+			}
+	})
+	|
+		"if" "(" exp2=Expr() ")" stmt1=Stmt() [LOOKAHEAD(1) "else" stmt2=Stmt()]{return new Ast.If(exp2, stmt1, stmt2);}
+		|
+		"while" "(" exp2=Expr() ")" stmt1=Stmt() {return new Ast.While(exp2, stmt1);}|
+		"System.out.println" "(" [exp4=PrArg()] ")" ";" {return new Ast.Print(exp4);}|
+		"return" [exp4=Expr()] ";" {return new Ast.Return(exp4);}
+
+}
+
+//Args -> Expr {"," Expr}
+//
+List<Ast.Exp> Args():
+{
+	List<Ast.Exp> args = new ArrayList<Ast.Exp>();
+	Ast.Exp exp;
+}
+{
+	exp = Expr() {args.add(exp);} ("," exp = Expr() {args.add(exp);})*
+	{return args;}
+}
+
+//PrArg -> Expr | <STRLIT>
+//
+Ast.Exp PrArg():
+{
+	Ast.Exp exp;
+	Token token;
+
+}
+{
+	LOOKAHEAD(2) exp = Expr() {return exp;} 
+ 	|token=<STRLIT>{String literal = new String(token.image.substring(1, token.image.length()-1));
+	return new Ast.StrLit(literal);}
+}
+
+//InitExpr -> "new" ( BasicType "[" <INTLIT> "]"
+//	             | <ID> "(" ")")
+//	   | Expr
+//
+Ast.Exp InitExpr():
+{
+	Ast.Exp exp;
+	Ast.Type type;
+	Ast.Id id;
+	int idx;
+}
+{
+	( "new" ( type = BasicType() "[" idx = INTLit() "]" { exp = new Ast.NewArray(type, idx);}
+		| id = Id() "("  ")" { exp = new Ast.NewObj(id.nm);})
+	| exp = Expr())
+	{return exp;}
+}
+
+//Expr -> AndExpr {"||" AndExpr}
+//
+Ast.Exp Expr():
+{
+	Ast.Exp exp1, exp2;
+}
+{
+	exp1 = AndExpr() ( "||" exp2 = AndExpr() {exp1 = new Ast.Binop(Ast.BOP.OR, exp1, exp2);})*
+	{return exp1;}
+}
+
+
+//AndExpr -> RelExpr {"&&" RelExpr}
+//
+Ast.Exp AndExpr():
+{
+	Ast.Exp exp1, exp2;
+}
+{
+	exp1 = RelExpr() ( "&&" exp2 = RelExpr() {exp1 = new Ast.Binop(Ast.BOP.AND, exp1, exp2);})*
+	{return exp1;}
+}
+
+//RelExpr -> ArithExpr {RelOp ArithExpr}
+//
+Ast.Exp RelExpr():
+{
+	Ast.Exp exp1, exp2;
+	Ast.BOP op;
+}
+{
+	exp1 = ArithExpr() (op = RelOp() exp2 = ArithExpr() {exp1 = new Ast.Binop(op, exp1, exp2);})*
+	{return exp1;}
+
+}
+
+//ArithExpr -> Term {("+" | "-") Term}
+//
+Ast.Exp ArithExpr():
+{	
+	Ast.Exp exp1, exp2;
+	Ast.BOP op;
+}
+{
+	exp1 = Term() ( ("+" {op = Ast.BOP.ADD;}| "-" {op = Ast.BOP.SUB;}) exp2 = Term()
+	{exp1 = new Ast.Binop(op, exp1, exp2);})*
+	{return exp1;}
+}
+//Term -> Factor {("*" | "/") Factor}
+//
+Ast.Exp Term():
+{
+	Ast.Exp exp1, exp2;
+	Ast.BOP op;
+}
+{
+	exp1 = Factor() ( ("*" {op = Ast.BOP.MUL;} | "/" {op = Ast.BOP.DIV;}) exp2 = Factor()
+	{exp1 = new Ast.Binop(op, exp1, exp2);})*
+	{return exp1;}
+}
+
+//Factor -> UnOp Factor
+//	 | "(" Expr ")"
+//	 | ExtId ( ["[" Expr "]"]
+//	         | "(" [Args] ")" )
+//	 | Literal
+Ast.Exp Factor():
+{
+	Ast.Exp factor;
+	Ast.Exp temp = null;
+	List<Ast.Exp> args = new ArrayList<Ast.Exp>();
+	Ast.UOP unop;
+	Ast.Exp literal;
+	Token token;
+	Ast.IntLit intlit;
+	Ast.DblLit dbllit;
+	Ast.BoolLit boollit;
+
+}
+{
+	(unop=UnOp() factor=Factor(){factor=new Ast.Unop(unop,factor);}
+	| "(" factor=Expr() ")"
+	| factor=ExtId() ["("[args=Args()]")"{
+		if(factor instanceof Ast.Id){
+			factor = new Ast.Call(new Ast.This(), ((Ast.Id)factor).nm, args);
+		}else if(factor instanceof Ast.Field){
+			factor=new Ast.Call(((Ast.Field)factor).obj, ((Ast.Field)factor).nm, args);}}
+	|LOOKAHEAD(2) "[" temp=Expr()"]"{factor=new Ast.ArrayElm(factor,temp);}]
+	|token=<INTLIT>{intlit=new Ast.IntLit(Integer.parseInt(token.image)); return intlit;}
+	|token=<DBLLIT>{dbllit=new Ast.DblLit(Double.parseDouble(token.image)); return dbllit;}
+	|(token = "true" | token="false"){boollit=new Ast.BoolLit(Boolean.parseBoolean(token.image));return boollit;})
+	//|literal=Literal(){factor = new Ast.Literal(literal);})
+	{return factor;}
+}
+
+
+/*
+//Literal -> <INTLIT>
+//	  |  <DBLLIT>
+//	  |  "true"
+//	  |  "false"
+Ast.Exp Literal():
+{
+	Token token;
+	Ast.IntLit intlit;
+	Ast.DblLit dblit;
+	Ast.BoolLit boollit;
+	Ast.StrLit literal; 
+}
+{
+	token=<INTLIT>{intlit = new Ast.IntLit(Integer.parseInt(token.image)); return intlit; }
+	|
+	token=<DBLLIT>{dblit = new Ast.DblLit(Integer.parseInt(token.image)); return dblit;}
+	|
+	(token="true" | token="false"){boollit=new Ast.BoolLit(Boolean.parseBoolean(token.image)); return boollit;}
+	|
+	token=<STRLIT> {literal = new Ast.StrLit(token.image);return literal;}
+}
+*/
+
+//ExtId -> ["This" "."] <ID> {"." <ID>}
+//
+Ast.Exp ExtId():
+{
+	Ast.Exp extid;
+	Ast.Id id;
+	Ast.Id id2;
+	Ast.This self = null;
+}
+{
+	["this" "." {self=new Ast.This();}] id=Id() {extid = self == null ? id : new Ast.Field(self, id.nm);}
+	("." id=Id() {extid = new Ast.Field(extid, id.nm);})*
+	{return extid;}
+}
+
+
+//RelOp -> "==" | "!=" | "<" | "<=" | ">" | ">="
+//
+Ast.BOP RelOp():{}
+{
+	("=="{return Ast.BOP.EQ;}
+	|"!="{return Ast.BOP.NE;}
+	|"<" {return Ast.BOP.LT;}
+	|"<="{return Ast.BOP.LE;}
+	|">" {return Ast.BOP.GT;}
+	|">="{return Ast.BOP.GE;})
+
+}
+
+
+
+//UnOp -> "-" | "!"
+//
+Ast.UOP UnOp():{}
+{
+	("-"{return Ast.UOP.NEG;}
+	|"!"{return Ast.UOP.NOT;})
+}
+
+
+Ast.Id Id():
+{
+	Token token;
+}
+{
+	token = <ID> {String lit = new String(token.image); 
+			return new Ast.Id(lit);}
+}
+
+Ast.Exp StrLit():
+{
+	Token token;
+}
+{
+	token = <STRLIT>{String literal = new String(token.image.substring(1, token.image.length()-1));
+	return new Ast.StrLit(literal);}
+}
+
+int INTLit():
+{
+	Token token;
+}
+{
+	token=<INTLIT>{return Integer.parseInt(token.image);}
+}
+
+Ast.Exp IntLit():
+{
+	Token token;
+}
+{
+	token=<INTLIT>{int literal = Integer.parseInt(token.image);
+	return new Ast.IntLit(literal);}
+}
+
+Ast.Exp BoolLit():
+{
+	Token token;
+}
+{
+	(token="true"|token="false"){boolean literal = Boolean.parseBoolean(token.image);
+	return new Ast.BoolLit(literal);}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

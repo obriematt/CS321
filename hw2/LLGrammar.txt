@@ -1,0 +1,121 @@
+// This is supporting software for CS321/CS322 Compilers and Language Design.
+// Copyright (c) Portland State University.
+//---------------------------------------------------------------------------
+// 
+//
+// MATTHEW O'BRIEN
+// HOMEWORK 2 LLGRAMMAR TEXT FILE
+//
+
+Program    -> {ClassDecl}
+
+ClassDecl  -> "class" <ID> ["extends" <ID>] "{" {VarDecl} {MethodDecl} "}"
+
+ 
+MethodDecl -> "public" MethodDecl1 "{" {VarDecl} {Stmt} "}"
+
+MethodDecl1 -> ExtType <ID> "(" [Param {"," Param}] ")"
+
+	   |  "static" "void" "main" "(" "String" "[" "]" <ID> ")"
+
+
+
+Param      -> Type <ID>
+
+VarDecl    -> Type <ID> ["=" InitExpr] ";"
+
+ExtType    -> Type | "void" 
+
+Type       -> BasicType ["[" "]"]             // array type
+
+           |  <ID>                          // object type
+
+BasicType  -> "int" | "double" | "boolean"
+
+Stmt  ->   "{" {Stmt} "}"                         // stmt block
+           |  ExtId MoarStuff
+           |  "if" "(" Expr ")" Stmt ["else" Stmt]    
+           |  "while" "(" Expr ")" Stmt               
+           |  "System" "." "out" "." "println" 
+                "(" [PrArg] ")" ";"                
+           |  "return" [Expr] ";"                     
+
+MoarStuff  -> "(" [Args] ")" ";"
+           |  ["[" Expr "]"] "=" InitExpr ";"
+
+Args       -> Expr {"," Expr}
+
+PrArg      -> Expr | <STRLIT>
+
+
+//New twice, needs to be fixed.
+
+
+
+InitExpr   -> "new" InitExpr1 
+           | Expr 
+
+InitExpr1  -> BasicType "[" <INTLIT> "]" 
+           | <ID> "(" ")"
+
+
+
+//This is the stuff to be altered
+
+Expr       -> Expr1 {BinOp1 Expr1}
+
+Expr1      -> Expr2 {BinOp2 Expr2}
+
+Expr2      -> Expr3 {BinOp3 Expr3}
+
+Expr3      -> Expr4 {BinOp4 Expr4}
+
+Expr4      -> Expr5 {BinOp5 Expr5}
+
+Expr5      -> {UnOp} Expr6
+
+Expr6      -> ExtId() {Expr7}
+           |  Expr8
+ 
+Expr7      -> "[" Expr "]"
+           |  "(" [Args] ")"
+
+Expr8      -> Literal
+           |  "(" Expr ")"
+
+
+
+
+//Common prefix issue fixing
+
+
+
+ExtId      -> ["this" "."] <ID> {"." <ID>}  // object field or just ID
+
+Literal    -> <INTLIT> | <DBLLIT> | "true" | "false"
+
+BinOp1     -> "||"
+BinOp2     -> "&&"
+BinOp3     -> "==" | "!=" | "<" | "<=" | ">" | ">="
+BinOp4     -> "+" | "-"
+BinOp5     -> "*" | "/"
+UnOp       -> "-" | "!"
+
+
+// Operator associativity and precedence.
+// 
+
+1. The arithmetic and logical binary operators are all left-associative.
+
+2. The operators' precedence is defined by the following table:
+
+     ------------------------
+     new, ()                    // highest
+     [], ., method call
+     -, ! 
+     *, / 
+     +, - 
+     ==, !=,  <, <=,  >, >=
+     &&
+     ||                         // lowest
+     ------------------------
